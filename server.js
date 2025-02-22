@@ -18,6 +18,7 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
+  path: "/socket.io/"  // Important for correct path handling
 });
 
 // Connect to MongoDB
@@ -27,7 +28,7 @@ connectDB();
 setupSockets(io);
 
 // Use routes
-app.use("/", routes);
+app.use("/", routes); 
 
 app.get("/", (req, res) => {
   res.send("Welcome to Chat App API");

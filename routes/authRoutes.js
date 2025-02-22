@@ -14,31 +14,39 @@ router.post("/signup", async (req, res) => {
     const db = getDB();
     const usersCollection = db.collection("users");
 
-    const { email, password } = req.body;
-    if (!email || !password) {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
       return res.status(400).json({ message: "All fields are required!" });
     }
 
+    // Check if user already exists
     const existingUser = await usersCollection.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists!" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-      email,
-      password: hashedPassword,
-      teamName: null, // Initially null
-      role: null, // Role will be assigned later
-    };
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Save user to DB
+    const newUser = { name, email, password: hashedPassword, createdAt: new Date() };
     await usersCollection.insertOne(newUser);
-    res.json({ message: "Signup successful! Please set your team & role." });
+
+    // Generate JWT Token
+    const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "7d" });
+
+    res.json({
+      message: "Signup successful!",
+      token, // Send JWT token
+      user: { name, email },
+    });
   } catch (error) {
     console.error("❌ Signup Error:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 });
+
 // 🔑 Login Route
 router.post("/login", async (req, res) => {
   try {
@@ -68,5 +76,6 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 });
+
 
 module.exports = router;

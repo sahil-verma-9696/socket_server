@@ -3,7 +3,11 @@ const workspaceStores = new Map();
 
 function setupSockets(io) {
   io.on("connection", (socket) => {
-    const { workspaceId, username } = socket.handshake.query;
+    const urlParams = new URLSearchParams(socket.handshake.url.split("?")[1]);
+    const workspaceId = urlParams.get("workspaceId");
+    const username = urlParams.get("username");
+
+    // console.log(urlParams);
 
     if (!workspaceId || !username) {
       console.log("❌ Connection rejected: Missing username or workspaceId");
