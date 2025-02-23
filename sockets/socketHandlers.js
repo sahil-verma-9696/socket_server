@@ -51,22 +51,35 @@ function setupSockets(io) {
         case "update":
           workspaceStores.set(workspaceId, { data: { ...currentState, cards: payload.cards } });
           break;
+    
         case "replace":
           workspaceStores.set(workspaceId, { data: payload });
           break;
+    
         case "delete":
-          workspaceStores.set(workspaceId, { data: { ...currentState, cards: payload.cards } });
+          const updatedCards = currentState.cards.filter(card => card.id !== payload.cardId);
+          workspaceStores.set(workspaceId, { data: { ...currentState, cards: updatedCards } });
+    
+          io.to(workspaceId).emit("sharedStateUpdate", { 
+            type: "replace", 
+            payload: { cards: updatedCards }  // ✅ Correct full state sent
+          });
           break;
+    
         case "reset":
           workspaceStores.set(workspaceId, { data: { cards: [] } });
           break;
       }
     
-      io.to(workspaceId).emit("sharedStateUpdate", {
-        type,
-        payload: workspaceStores.get(workspaceId).data, // ✅ Correct Updated Data
-      });
+      if (type !== "delete") {
+        io.to(workspaceId).emit("sharedStateUpdate", {
+          type,
+          payload: workspaceStores.get(workspaceId).data,
+        });
+      }
     });
+    
+    
     
     
     
