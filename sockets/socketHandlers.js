@@ -1,4 +1,4 @@
-const users = new Map(); 
+const users = new Map();
 const workspaceStores = new Map();
 
 function setupSockets(io) {
@@ -6,8 +6,6 @@ function setupSockets(io) {
     const urlParams = new URLSearchParams(socket.handshake.url.split("?")[1]);
     const workspaceId = urlParams.get("workspaceId");
     const username = urlParams.get("username");
-
-    // console.log(urlParams);
 
     if (!workspaceId || !username) {
       console.log("❌ Connection rejected: Missing username or workspaceId");
@@ -19,7 +17,9 @@ function setupSockets(io) {
 
     for (const [existingSocketId, existingUsername] of userMap.entries()) {
       if (existingUsername === username) {
-        console.log(`♻️ Replacing old connection for ${username} in workspace ${workspaceId}`);
+        console.log(
+          `♻️ Replacing old connection for ${username} in workspace ${workspaceId}`
+        );
         userMap.delete(existingSocketId);
       }
     }
@@ -30,21 +30,54 @@ function setupSockets(io) {
     console.log(`👥 ${username} joined workspace: ${workspaceId}`);
     io.to(workspaceId).emit("updateUsers", Array.from(userMap.entries()));
 
-    // --- HANDLE LABEL UPDATES ---
-    socket.on("updateLabels", (labels) => {
-      console.log(`🔄 Labels updated in workspace ${workspaceId}:`, labels);
-      
-      if (!workspaceStores.has(workspaceId)) workspaceStores.set(workspaceId, {});
-      workspaceStores.get(workspaceId).labels = labels;
+    // Ensure workspace data exists
+    if (!workspaceStores.has(workspaceId)) {
+      workspaceStores.set(workspaceId, { data: {} });
+    }
 
-      io.to(workspaceId).emit("syncLabels", labels);
+    // Send initial workspace data on connect
+    socket.emit("sharedStateUpdate", {
+      type: "sync",
+      payload: workspaceStores.get(workspaceId).data,
     });
+
+    // Handle workspace updates with a single event
+    socket.on("sharedStateUpdate", ({ type, payload }) => {
+      console.log(`🔄 Shared state update in workspace ${workspaceId}:`, { type, payload });
+    
+      let currentState = workspaceStores.get(workspaceId).data || { cards: [] };
+    
+      switch (type) {
+        case "update":
+          workspaceStores.set(workspaceId, { data: { ...currentState, cards: payload.cards } });
+          break;
+        case "replace":
+          workspaceStores.set(workspaceId, { data: payload });
+          break;
+        case "delete":
+          workspaceStores.set(workspaceId, { data: { ...currentState, cards: payload.cards } });
+          break;
+        case "reset":
+          workspaceStores.set(workspaceId, { data: { cards: [] } });
+          break;
+      }
+    
+      io.to(workspaceId).emit("sharedStateUpdate", {
+        type,
+        payload: workspaceStores.get(workspaceId).data, // ✅ Correct Updated Data
+      });
+    });
+    
+    
+    
 
     socket.on("disconnect", () => {
       if (users.has(workspaceId)) {
         const userMap = users.get(workspaceId);
         if (userMap.has(socket.id)) {
-          console.log(`🔴 ${userMap.get(socket.id)} left workspace: ${workspaceId}`);
+          console.log(
+            `🔴 ${userMap.get(socket.id)} left workspace: ${workspaceId}`
+          );
           userMap.delete(socket.id);
           io.to(workspaceId).emit("updateUsers", Array.from(userMap.entries()));
 
