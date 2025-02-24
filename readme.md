@@ -9,3 +9,15 @@
 
 manage - team member(accept/reject)          raise - request to join team
 
+
+
+workspaceStores :{
+        hack1: data: {
+                //cards: [],
+                cards: {}
+        },
+
+        hack2: data: {
+
+        }
+}

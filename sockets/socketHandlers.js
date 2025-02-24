@@ -15,6 +15,7 @@ function setupSockets(io) {
     if (!users.has(workspaceId)) users.set(workspaceId, new Map());
     const userMap = users.get(workspaceId);
 
+    // Prevent duplicate usernames
     for (const [existingSocketId, existingUsername] of userMap.entries()) {
       if (existingUsername === username) {
         console.log(
@@ -41,48 +42,62 @@ function setupSockets(io) {
       payload: workspaceStores.get(workspaceId).data,
     });
 
-    // Handle workspace updates with a single event
-    socket.on("sharedStateUpdate", ({ type, payload }) => {
-      console.log(`🔄 Shared state update in workspace ${workspaceId}:`, { type, payload });
-    
-      let currentState = workspaceStores.get(workspaceId).data || { cards: [] };
-    
+    // Handle dynamic shared state updates
+    socket.on("sharedStateUpdate", ({ type, key, payload }) => {
+      console.log("workspaceStores",workspaceStores.get(workspaceId).data || {})
+
+       
+      console.log(`🔄 Shared state update in workspace ${workspaceId}:`, {
+        type,
+        key,
+        payload,
+      });
+
+      let currentState = workspaceStores.get(workspaceId).data || {};
+
       switch (type) {
+        case "merge":
+          if (!Array.isArray(currentState[key])) {
+            currentState[key] = []; // ✅ Initialize as an array if undefined
+          }
+
+          if (Array.isArray(payload)) {
+            // ✅ Prevent duplicate IDs in array
+            const existingIds = new Set(
+              currentState[key].map((item) => item.id)
+            );
+            const newItems = payload.filter(
+              (item) => !existingIds.has(item.id)
+            );
+
+            currentState[key] = [...currentState[key], ...newItems];
+          } else {
+            console.warn(`⚠️ Merge failed: ${key} is not an array`);
+          }
+          break;
+
         case "update":
-          workspaceStores.set(workspaceId, { data: { ...currentState, cards: payload.cards } });
+          currentState[key] = payload;
           break;
-    
-        case "replace":
-          workspaceStores.set(workspaceId, { data: payload });
-          break;
-    
+
         case "delete":
-          const updatedCards = currentState.cards.filter(card => card.id !== payload.cardId);
-          workspaceStores.set(workspaceId, { data: { ...currentState, cards: updatedCards } });
-    
-          io.to(workspaceId).emit("sharedStateUpdate", { 
-            type: "replace", 
-            payload: { cards: updatedCards }  // ✅ Correct full state sent
-          });
+          delete currentState[key];
           break;
-    
+
+        case "replace":
+          currentState = { ...payload }; // ✅ Ensure complete replacement
+          break;
+
         case "reset":
-          workspaceStores.set(workspaceId, { data: { cards: [] } });
+          currentState = {};
           break;
       }
-    
-      if (type !== "delete") {
-        io.to(workspaceId).emit("sharedStateUpdate", {
-          type,
-          payload: workspaceStores.get(workspaceId).data,
-        });
-      }
+
+      workspaceStores.set(workspaceId, { data: currentState });
+
+      // Broadcast **only the updated key** (prevents full state resending)
+      io.to(workspaceId).emit("sharedStateUpdate", { type, key, payload });
     });
-    
-    
-    
-    
-    
 
     socket.on("disconnect", () => {
       if (users.has(workspaceId)) {
@@ -94,8 +109,12 @@ function setupSockets(io) {
           userMap.delete(socket.id);
           io.to(workspaceId).emit("updateUsers", Array.from(userMap.entries()));
 
+          // If no users left, clean up workspace
           if (userMap.size === 0) {
             users.delete(workspaceId);
+            console.log(
+              `🛑 No users left in workspace ${workspaceId}, but state is retained.`
+            );
           }
         }
       }

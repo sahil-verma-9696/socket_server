@@ -1,12 +1,23 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const session = require("express-session");
 const { getDB } = require("../config/db");
 const dotenv = require("dotenv");
 
 dotenv.config();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// 🛠 Session Middleware
+// router.use(
+//   session({
+//     secret: JWT_SECRET,
+//     resave: false,
+//     saveUninitialized: false,
+//     cookie: { secure: false, httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
+//   })
+// );
 
 // 🛠 Signup Route
 router.post("/signup", async (req, res) => {
@@ -30,15 +41,23 @@ router.post("/signup", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Save user to DB
-    const newUser = { name, email, password: hashedPassword, createdAt: new Date() };
+    const newUser = {
+      name,
+      email,
+      password: hashedPassword,
+      createdAt: new Date(),
+    };
     await usersCollection.insertOne(newUser);
 
     // Generate JWT Token
     const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "7d" });
 
+    // **Set Session**
+    req.session.user = { email, name };
+
     res.json({
       message: "Signup successful!",
-      token, // Send JWT token
+      token, // Optional JWT
       user: { name, email },
     });
   } catch (error) {
@@ -68,14 +87,41 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password!" });
     }
 
-    const token = jwt.sign({ email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ email, role: user.role }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
 
-    res.json({ message: "Login successful!", token, role: user.role });
+    // **Set Session**
+    req.session.user = { email, name: user.name, role: user.role };
+
+    res.json({
+      message: "Login successful!",
+      token,
+      user: { name: user.name, email, role: user.role },
+    });
   } catch (error) {
     console.error("❌ Login Error:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 });
 
+// 🚪 Logout Route
+router.post("/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ message: "Logout failed" });
+    }
+    res.clearCookie("connect.sid"); // Default session cookie clear
+    res.json({ message: "Logout successful!" });
+  });
+});
+
+// 🛡 Check Auth Route
+router.get("/me", (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ message: "Not logged in" });
+  }
+  res.json({ user: req.session.user });
+});
 
 module.exports = router;
