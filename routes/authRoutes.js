@@ -100,7 +100,6 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
-
 // 🛠 Signup Route
 router.post("/signup", async (req, res) => {
   try {
