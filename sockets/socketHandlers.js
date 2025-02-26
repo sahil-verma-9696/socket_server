@@ -44,9 +44,11 @@ function setupSockets(io) {
 
     // Handle dynamic shared state updates
     socket.on("sharedStateUpdate", ({ type, key, payload }) => {
-      console.log("workspaceStores",workspaceStores.get(workspaceId).data || {})
+      console.log(
+        "workspaceStores",
+        workspaceStores.get(workspaceId).data || {}
+      );
 
-       
       console.log(`🔄 Shared state update in workspace ${workspaceId}:`, {
         type,
         key,

@@ -47,10 +47,10 @@ connectDB();
 setupSockets(io);
 
 // Use routes
-app.use("/", routes);
+app.use("/api", routes);
 
 app.get("/", (req, res) => {
-  res.send("Welcome to Chat App API");
+  res.send("FocusFlow Backend is Running...");
 });
 
 const PORT = process.env.PORT || 5000;

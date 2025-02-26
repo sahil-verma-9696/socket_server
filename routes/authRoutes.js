@@ -4,20 +4,102 @@ const bcrypt = require("bcryptjs");
 const session = require("express-session");
 const { getDB } = require("../config/db");
 const dotenv = require("dotenv");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+const { getPasswordResetEmail } = require("../utils/emailTemplates");
 
 dotenv.config();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// 🛠 Session Middleware
-// router.use(
-//   session({
-//     secret: JWT_SECRET,
-//     resave: false,
-//     saveUninitialized: false,
-//     cookie: { secure: false, httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
-//   })
-// );
+
+// forgot password
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const db = getDB();
+    const usersCollection = db.collection("users");
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required!" });
+    }
+
+    const user = await usersCollection.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found!" });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenExpires = new Date(Date.now() + 3600000); // 1 hour expiry
+
+    // Save token in DB
+    await usersCollection.updateOne(
+      { email },
+      { $set: { resetToken, resetTokenExpires } }
+    );
+
+    // Send email
+    const transporter = nodemailer.createTransport({
+      service: "Gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const resetLink = `${process.env.FRONTEND_URL}/auth/reset-password?token=${resetToken}&email=${email}`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "🔒 Reset Your Password - CollabHub",
+  html: getPasswordResetEmail(resetLink), // ✅ Using the separate email template
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({ message: "Password reset link sent!" });
+  } catch (error) {
+    console.error("❌ Forgot Password Error:", error);
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+});
+
+// reset password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const db = getDB();
+    const usersCollection = db.collection("users");
+    const { email, token, newPassword } = req.body;
+
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ message: "All fields are required!" });
+    }
+
+    const user = await usersCollection.findOne({ email });
+
+    if (!user || user.resetToken !== token || new Date() > user.resetTokenExpires) {
+      return res.status(400).json({ message: "Invalid or expired token!" });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password in DB & remove token
+    await usersCollection.updateOne(
+      { email },
+      { $set: { password: hashedPassword }, $unset: { resetToken: "", resetTokenExpires: "" } }
+    );
+
+    res.json({ message: "Password reset successful!" });
+  } catch (error) {
+    console.error("❌ Reset Password Error:", error);
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+});
+
 
 // 🛠 Signup Route
 router.post("/signup", async (req, res) => {
@@ -92,12 +174,12 @@ router.post("/login", async (req, res) => {
     });
 
     // **Set Session**
-    req.session.user = { email, name: user.name, role: user.role };
+    req.session.user = { email, name: user.name };
 
     res.json({
       message: "Login successful!",
       token,
-      user: { name: user.name, email, role: user.role },
+      user: { name: user.name, email },
     });
   } catch (error) {
     console.error("❌ Login Error:", error);
@@ -106,7 +188,7 @@ router.post("/login", async (req, res) => {
 });
 
 // 🚪 Logout Route
-router.post("/logout", (req, res) => {
+router.get("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).json({ message: "Logout failed" });
